@@ -59,11 +59,21 @@ const afficherSalaire = (valeur) =>
   })} $/h`
 
 function App() {
+  // ==========================================================
+  // 1. ÉTATS DE L'APPLICATION
+  // ==========================================================
+
   const [statistiques, setStatistiques] = useState(null)
   const [donneesMensuelles, setDonneesMensuelles] = useState([])
   const [donneesProfessions, setDonneesProfessions] = useState([])
   const [donneesProvinces, setDonneesProvinces] = useState([])
   const [donneesSalaires, setDonneesSalaires] = useState([])
+
+  // Liste complète des provinces, chargée une seule fois
+  const [listeProvinces, setListeProvinces] = useState([])
+
+  // Province sélectionnée : chaîne vide = tout le Canada
+  const [provinceSelectionnee, setProvinceSelectionnee] = useState('')
 
   const [afficherToutes, setAfficherToutes] = useState(false)
   const [afficherTousSalaires, setAfficherTousSalaires] = useState(false)
@@ -74,145 +84,159 @@ function App() {
   const [erreurProvinces, setErreurProvinces] = useState('')
   const [erreurSalaires, setErreurSalaires] = useState('')
 
-  // 1. Statistiques générales
+  // ==========================================================
+  // 2. CHARGER LA LISTE DES PROVINCES
+  // ==========================================================
+
   useEffect(() => {
-    async function chargerStatistiques() {
-      try {
-        const reponse = await fetch(
-          `${API_URL}/statistiques/generales`
-        )
-
-        if (!reponse.ok) {
-          throw new Error('Erreur de chargement des statistiques')
-        }
-
-        const donnees = await reponse.json()
-        setStatistiques(donnees)
-      } catch (error) {
-        setErreur(error.message)
-      } finally {
-        setChargement(false)
-      }
-    }
-
-    chargerStatistiques()
-  }, [])
-
-  // 2. Évolution mensuelle
-  useEffect(() => {
-    async function chargerDonneesMensuelles() {
-      try {
-        const reponse = await fetch(
-          `${API_URL}/statistiques/mensuelles`
-        )
-
-        if (!reponse.ok) {
-          throw new Error('Erreur de chargement des données mensuelles')
-        }
-
-        const donnees = await reponse.json()
-        setDonneesMensuelles(donnees)
-      } catch (error) {
-        console.error(error)
-      }
-    }
-
-    chargerDonneesMensuelles()
-  }, [])
-
-  // 3. Professions TI
-  useEffect(() => {
-    async function chargerProfessions() {
-      try {
-        const reponse = await fetch(
-          `${API_URL}/statistiques/professions`
-        )
-
-        if (!reponse.ok) {
-          throw new Error('Erreur de chargement des professions')
-        }
-
-        const donnees = await reponse.json()
-
-        setDonneesProfessions(
-          donnees.map((profession) => ({
-            ...profession,
-            nom_court:
-              nomsCourts[String(profession.code_cnp)] ||
-              profession.nom_profession
-          }))
-        )
-      } catch (error) {
-        setErreurProfessions(error.message)
-      }
-    }
-
-    chargerProfessions()
-  }, [])
-
-  // 4. Répartition par province
-  useEffect(() => {
-    async function chargerProvinces() {
+    async function chargerListeProvinces() {
       try {
         const reponse = await fetch(
           `${API_URL}/statistiques/provinces`
         )
 
         if (!reponse.ok) {
-          throw new Error('Erreur de chargement des provinces')
+          throw new Error('Impossible de charger les provinces')
         }
 
         const donnees = await reponse.json()
 
-        setDonneesProvinces(
-          [...donnees].sort(
-            (a, b) => b.nombre_offres - a.nombre_offres
+        setListeProvinces(
+          [...donnees].sort((a, b) =>
+            a.province.localeCompare(b.province, 'fr')
           )
         )
       } catch (error) {
+        console.error(error)
         setErreurProvinces(error.message)
       }
     }
 
-    chargerProvinces()
+    chargerListeProvinces()
   }, [])
 
-  // 5. Salaires horaires estimés par profession
+  // ==========================================================
+  // 3. CHARGER LES DONNÉES SELON LA PROVINCE
+  // ==========================================================
+
   useEffect(() => {
-    async function chargerSalaires() {
-      try {
-        const reponse = await fetch(
-          `${API_URL}/statistiques/salaires-professions`
+    const controleur = new AbortController()
+
+    const parametres = new URLSearchParams()
+
+    if (provinceSelectionnee) {
+      parametres.set('province', provinceSelectionnee)
+    }
+
+    const suffixe = parametres.toString()
+      ? `?${parametres.toString()}`
+      : ''
+
+    async function recupererDonnees(endpoint) {
+      const reponse = await fetch(
+        `${API_URL}/statistiques/${endpoint}${suffixe}`,
+        { signal: controleur.signal }
+      )
+
+      if (!reponse.ok) {
+        throw new Error(
+          `Erreur HTTP ${reponse.status} : ${endpoint}`
         )
+      }
 
-        if (!reponse.ok) {
-          throw new Error('Erreur de chargement des salaires')
-        }
+      return reponse.json()
+    }
 
-        const donnees = await reponse.json()
+    async function chargerTableauDeBord() {
+      setChargement(true)
+      setErreur('')
+      setErreurProfessions('')
+      setErreurProvinces('')
+      setErreurSalaires('')
 
-        const salaires = donnees
-          .map((profession) => ({
+      // Vider les anciennes données pour éviter d'afficher
+      // les résultats de la province précédente.
+      setStatistiques(null)
+      setDonneesMensuelles([])
+      setDonneesProfessions([])
+      setDonneesProvinces([])
+      setDonneesSalaires([])
+
+      try {
+        const [
+          generales,
+          mensuelles,
+          professions,
+          provinces,
+          salaires
+        ] = await Promise.all([
+          recupererDonnees('generales'),
+          recupererDonnees('mensuelles'),
+          recupererDonnees('professions'),
+          recupererDonnees('provinces'),
+          recupererDonnees('salaires-professions')
+        ])
+
+        if (controleur.signal.aborted) return
+
+        setStatistiques(generales)
+        setDonneesMensuelles(mensuelles)
+
+        setDonneesProfessions(
+          professions.map((profession) => ({
             ...profession,
             nom_court:
               nomsCourts[String(profession.code_cnp)] ||
               profession.nom_profession
           }))
-          .sort(
-            (a, b) =>
-              b.salaire_horaire_moyen - a.salaire_horaire_moyen
-          )
+        )
 
-        setDonneesSalaires(salaires)
+        setDonneesProvinces(
+          [...provinces].sort(
+            (a, b) => b.nombre_offres - a.nombre_offres
+          )
+        )
+
+        setDonneesSalaires(
+          salaires
+            .map((profession) => ({
+              ...profession,
+              nom_court:
+                nomsCourts[String(profession.code_cnp)] ||
+                profession.nom_profession
+            }))
+            .sort(
+              (a, b) =>
+                b.salaire_horaire_moyen -
+                a.salaire_horaire_moyen
+            )
+        )
       } catch (error) {
-        setErreurSalaires(error.message)
+        if (error.name !== 'AbortError') {
+          setErreur(
+            'Impossible de charger les données du tableau de bord. ' +
+            'Vérifie que FastAPI fonctionne.'
+          )
+          console.error(error)
+        }
+      } finally {
+        if (!controleur.signal.aborted) {
+          setChargement(false)
+        }
       }
     }
 
-    chargerSalaires()
-  }, [])
+    chargerTableauDeBord()
 
-  // Top 10 ou toutes les professions
+    return () => {
+      controleur.abort()
+    }
+  }, [provinceSelectionnee])
+
+  // ==========================================================
+  // 4. PRÉPARATION DES DONNÉES DES GRAPHIQUES
+  // ==========================================================
+
   const professionsTriees = [...donneesProfessions].sort(
     (a, b) => b.nombre_offres - a.nombre_offres
   )
@@ -221,10 +245,26 @@ function App() {
     ? professionsTriees
     : professionsTriees.slice(0, 10)
 
-  // Top 10 ou toutes les professions pour les salaires
   const salairesAffiches = afficherTousSalaires
     ? donneesSalaires
     : donneesSalaires.slice(0, 10)
+
+  const nomTerritoire = provinceSelectionnee || 'Canada'
+
+  const styleBouton = (couleur) => ({
+    backgroundColor: couleur,
+    color: 'white',
+    border: 'none',
+    padding: '12px 22px',
+    borderRadius: 8,
+    fontSize: 14,
+    cursor: 'pointer',
+    fontWeight: 600
+  })
+
+  // ==========================================================
+  // 5. INTERFACE DU TABLEAU DE BORD
+  // ==========================================================
 
   return (
     <main>
@@ -235,17 +275,100 @@ function App() {
         de janvier à septembre 2026.
       </p>
 
+      {/* FILTRE INTERACTIF PAR PROVINCE */}
+
+      <section
+        className="graphique"
+        style={{ marginBottom: 24 }}
+      >
+        <h2>Explorer les données par province</h2>
+
+        <p>
+          Sélectionnez une province ou un territoire pour
+          actualiser les indicateurs et les graphiques.
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            flexWrap: 'wrap'
+          }}
+        >
+          <label
+            htmlFor="filtre-province"
+            style={{ fontWeight: 600 }}
+          >
+            Province ou territoire :
+          </label>
+
+          <select
+            id="filtre-province"
+            value={provinceSelectionnee}
+            onChange={(event) =>
+              setProvinceSelectionnee(event.target.value)
+            }
+            style={{
+              padding: '12px 16px',
+              borderRadius: 8,
+              border: '1px solid #cbd5e1',
+              backgroundColor: 'white',
+              color: '#17365d',
+              fontSize: 15,
+              minWidth: 250,
+              maxWidth: '100%'
+            }}
+          >
+            <option value="">Toutes les provinces (Canada)</option>
+
+            {listeProvinces.map((province) => (
+              <option
+                key={province.province}
+                value={province.province}
+              >
+                {province.province}
+              </option>
+            ))}
+          </select>
+
+          {provinceSelectionnee && (
+            <button
+              type="button"
+              onClick={() => setProvinceSelectionnee('')}
+              style={styleBouton('#475569')}
+            >
+              Réinitialiser le filtre
+            </button>
+          )}
+        </div>
+
+        <p
+          style={{
+            marginTop: 16,
+            fontSize: 14,
+            color: '#64748b'
+          }}
+        >
+          Zone analysée : <strong>{nomTerritoire}</strong>
+        </p>
+      </section>
+
       {/* INDICATEURS GÉNÉRAUX */}
 
       {chargement && (
-        <p>Chargement des statistiques...</p>
+        <p role="status">
+          Chargement des données pour {nomTerritoire}...
+        </p>
       )}
 
       {erreur && (
-        <p style={{ color: 'red' }}>{erreur}</p>
+        <p role="alert" style={{ color: 'red' }}>
+          {erreur}
+        </p>
       )}
 
-      {statistiques && (
+      {!chargement && statistiques && (
         <section className="statistiques">
           <div className="carte">
             <h2>Offres d'emploi</h2>
@@ -267,9 +390,16 @@ function App() {
       {/* GRAPHIQUE 1 : ÉVOLUTION MENSUELLE */}
 
       <section className="graphique">
-        <h2>Évolution mensuelle des offres d'emploi TI</h2>
+        <h2>
+          Évolution mensuelle des offres d'emploi TI
+        </h2>
 
-        {donneesMensuelles.length > 0 ? (
+        <p>
+          Évolution des offres publiées dans la zone
+          sélectionnée, de janvier à septembre 2026.
+        </p>
+
+        {!chargement && donneesMensuelles.length > 0 ? (
           <div style={{ width: '100%', height: 350 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={donneesMensuelles}>
@@ -282,7 +412,13 @@ function App() {
 
                 <YAxis domain={[0, 'auto']} />
 
-                <Tooltip />
+                <Tooltip
+                  labelFormatter={afficherMois}
+                  formatter={(valeur) => [
+                    afficherNombre(valeur),
+                    "Nombre d'offres"
+                  ]}
+                />
 
                 <Line
                   type="monotone"
@@ -296,25 +432,34 @@ function App() {
             </ResponsiveContainer>
           </div>
         ) : (
-          <p>Chargement du graphique...</p>
+          !erreur && (
+            <p>
+              {chargement
+                ? 'Chargement du graphique...'
+                : 'Aucune donnée mensuelle disponible.'}
+            </p>
+          )
         )}
       </section>
 
       {/* GRAPHIQUE 2 : PROFESSIONS TI */}
 
       <section className="graphique">
-        <h2>Répartition des offres d'emploi par profession TI</h2>
+        <h2>
+          Répartition des offres d'emploi par profession TI
+        </h2>
 
         <p>
           Comparaison des professions selon le nombre
           d'offres publiées entre janvier et septembre 2026.
+          Zone analysée : {nomTerritoire}.
         </p>
 
         {erreurProfessions && (
           <p style={{ color: 'red' }}>{erreurProfessions}</p>
         )}
 
-        {donneesProfessions.length > 0 ? (
+        {!chargement && donneesProfessions.length > 0 ? (
           <>
             <div
               style={{
@@ -375,30 +520,32 @@ function App() {
               </ResponsiveContainer>
             </div>
 
-            <div style={{ textAlign: 'center', marginTop: 20 }}>
+            <div
+              style={{
+                textAlign: 'center',
+                marginTop: 20
+              }}
+            >
               <button
                 type="button"
-                onClick={() => setAfficherToutes(!afficherToutes)}
-                style={{
-                  backgroundColor: '#2563eb',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 22px',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
+                onClick={() =>
+                  setAfficherToutes(!afficherToutes)
+                }
+                style={styleBouton('#2563eb')}
               >
                 {afficherToutes
                   ? 'Afficher le Top 10'
-                  : 'Voir les 15 professions'}
+                  : 'Voir toutes les professions'}
               </button>
             </div>
           </>
         ) : (
-          !erreurProfessions && (
-            <p>Chargement des professions...</p>
+          !erreur && !erreurProfessions && (
+            <p>
+              {chargement
+                ? 'Chargement des professions...'
+                : 'Aucune offre disponible pour cette sélection.'}
+            </p>
           )
         )}
       </section>
@@ -406,22 +553,28 @@ function App() {
       {/* GRAPHIQUE 3 : PROVINCES */}
 
       <section className="graphique">
-        <h2>Répartition des offres d'emploi TI par province</h2>
+        <h2>
+          Répartition des offres d'emploi TI par province
+        </h2>
 
         <p>
-          Comparaison géographique des offres d'emploi TI
-          publiées entre janvier et septembre 2026.
+          {provinceSelectionnee
+            ? `Offres d'emploi TI dans la zone sélectionnée : ${provinceSelectionnee}.`
+            : "Comparaison géographique des offres d'emploi TI au Canada, de janvier à septembre 2026."}
         </p>
 
         {erreurProvinces && (
           <p style={{ color: 'red' }}>{erreurProvinces}</p>
         )}
 
-        {donneesProvinces.length > 0 ? (
+        {!chargement && donneesProvinces.length > 0 ? (
           <div
             style={{
               width: '100%',
-              height: Math.max(420, donneesProvinces.length * 48)
+              height: Math.max(
+                160,
+                donneesProvinces.length * 48
+              )
             }}
           >
             <ResponsiveContainer width="100%" height="100%">
@@ -474,8 +627,12 @@ function App() {
             </ResponsiveContainer>
           </div>
         ) : (
-          !erreurProvinces && (
-            <p>Chargement des provinces...</p>
+          !erreur && !erreurProvinces && (
+            <p>
+              {chargement
+                ? 'Chargement des provinces...'
+                : 'Aucune donnée géographique disponible.'}
+            </p>
           )
         )}
       </section>
@@ -483,19 +640,22 @@ function App() {
       {/* GRAPHIQUE 4 : SALAIRES PAR PROFESSION */}
 
       <section className="graphique">
-        <h2>Salaires horaires moyens estimés par profession TI</h2>
+        <h2>
+          Salaires horaires moyens estimés par profession TI
+        </h2>
 
         <p>
           Moyenne des milieux de fourchettes salariales horaires
           annoncées dans les offres exploitables.
           Les montants sont exprimés en dollars canadiens par heure.
+          Zone analysée : {nomTerritoire}.
         </p>
 
         {erreurSalaires && (
           <p style={{ color: 'red' }}>{erreurSalaires}</p>
         )}
 
-        {donneesSalaires.length > 0 ? (
+        {!chargement && donneesSalaires.length > 0 ? (
           <>
             <div
               style={{
@@ -560,22 +720,18 @@ function App() {
               </ResponsiveContainer>
             </div>
 
-            <div style={{ textAlign: 'center', marginTop: 20 }}>
+            <div
+              style={{
+                textAlign: 'center',
+                marginTop: 20
+              }}
+            >
               <button
                 type="button"
                 onClick={() =>
                   setAfficherTousSalaires(!afficherTousSalaires)
                 }
-                style={{
-                  backgroundColor: '#7c3aed',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 22px',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
+                style={styleBouton('#7c3aed')}
               >
                 {afficherTousSalaires
                   ? 'Afficher le Top 10'
@@ -590,15 +746,20 @@ function App() {
                 marginTop: 20
               }}
             >
-              Note : ces valeurs sont calculées uniquement à partir
-              des offres disposant de données salariales horaires
-              exploitables. Elles ne représentent pas les salaires
-              réellement versés aux travailleurs.
+              Note : ces valeurs sont calculées uniquement
+              à partir des offres disposant de données
+              salariales horaires exploitables. Elles ne
+              représentent pas les salaires réellement
+              versés aux travailleurs.
             </p>
           </>
         ) : (
-          !erreurSalaires && (
-            <p>Chargement des données salariales...</p>
+          !erreur && !erreurSalaires && (
+            <p>
+              {chargement
+                ? 'Chargement des données salariales...'
+                : 'Aucune donnée salariale exploitable pour cette sélection.'}
+            </p>
           )
         )}
       </section>

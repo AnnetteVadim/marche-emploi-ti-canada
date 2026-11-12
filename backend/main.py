@@ -1,6 +1,6 @@
 
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import get_connection
@@ -13,7 +13,7 @@ from backend.database import get_connection
 app = FastAPI(
     title="Analyse du marché de l'emploi TI au Canada",
     description="API REST pour analyser les offres d'emploi TI au Canada.",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 
@@ -34,7 +34,24 @@ app.add_middleware(
 
 
 # ============================================================
-# 3. ROUTE D'ACCUEIL
+# 3. FONCTION COMMUNE POUR FILTRER PAR PROVINCE
+# ============================================================
+
+def filtre_province(province):
+    """
+    Retourne une condition SQL et ses paramètres.
+
+    Si aucune province n'est sélectionnée, toutes les
+    offres sont conservées.
+    """
+    if province is None or not province.strip():
+        return "", []
+
+    return "WHERE r.province = %s", [province.strip()]
+
+
+# ============================================================
+# 4. ROUTE D'ACCUEIL
 # ============================================================
 
 @app.get("/")
@@ -48,22 +65,29 @@ def accueil():
 
 
 # ============================================================
-# 4. NOMBRE TOTAL D'OFFRES
+# 5. NOMBRE TOTAL D'OFFRES
 # ============================================================
 
 @app.get("/statistiques/total-offres")
-def total_offres():
+def total_offres(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT COUNT(*)
+            FROM offres_emploi o
+            JOIN regions r ON o.id_region = r.id_region
+            {condition};
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute(
-                    "SELECT COUNT(*) FROM offres_emploi;"
-                )
+                curseur.execute(requete, parametres)
                 total = curseur.fetchone()[0]
 
-        return {
-            "total_offres": total
-        }
+        return {"total_offres": total}
 
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
@@ -73,23 +97,29 @@ def total_offres():
 
 
 # ============================================================
-# 5. INDICATEURS GÉNÉRAUX
+# 6. INDICATEURS GÉNÉRAUX
 # ============================================================
 
 @app.get("/statistiques/generales")
-def statistiques_generales():
+def statistiques_generales(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT
+                COUNT(*) AS nombre_offres,
+                COALESCE(SUM(o.nombre_postes), 0) AS postes_vacants,
+                COUNT(DISTINCT o.code_cnp) AS nombre_professions
+            FROM offres_emploi o
+            JOIN regions r ON o.id_region = r.id_region
+            {condition};
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        COUNT(*) AS nombre_offres,
-                        SUM(nombre_postes) AS postes_vacants,
-                        COUNT(DISTINCT code_cnp)
-                            AS nombre_professions
-                    FROM offres_emploi;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultat = curseur.fetchone()
 
         return {
@@ -101,32 +131,36 @@ def statistiques_generales():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "les statistiques générales."
-            )
+            detail="Impossible de récupérer les statistiques générales."
         ) from erreur
 
 
 # ============================================================
-# 6. ÉVOLUTION MENSUELLE DES OFFRES
+# 7. ÉVOLUTION MENSUELLE DES OFFRES
 # ============================================================
 
 @app.get("/statistiques/mensuelles")
-def statistiques_mensuelles():
+def statistiques_mensuelles(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT
+                o.mois_source AS mois,
+                COUNT(*) AS nombre_offres,
+                COALESCE(SUM(o.nombre_postes), 0) AS postes_vacants
+            FROM offres_emploi o
+            JOIN regions r ON o.id_region = r.id_region
+            {condition}
+            GROUP BY o.mois_source
+            ORDER BY o.mois_source;
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        mois_source AS mois,
-                        COUNT(*) AS nombre_offres,
-                        SUM(nombre_postes) AS postes_vacants
-                    FROM offres_emploi
-                    GROUP BY mois_source
-                    ORDER BY mois_source;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultats = curseur.fetchall()
 
         return [
@@ -141,15 +175,12 @@ def statistiques_mensuelles():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "les statistiques mensuelles."
-            )
+            detail="Impossible de récupérer les statistiques mensuelles."
         ) from erreur
 
 
 # ============================================================
-# 7. TEST DE CONNEXION À POSTGRESQL
+# 8. TEST DE CONNEXION À POSTGRESQL
 # ============================================================
 
 @app.get("/test-database")
@@ -157,9 +188,7 @@ def tester_database():
     try:
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute(
-                    "SELECT current_database();"
-                )
+                curseur.execute("SELECT current_database();")
                 resultat = curseur.fetchone()
 
         return {
@@ -175,29 +204,33 @@ def tester_database():
 
 
 # ============================================================
-# 8. RÉPARTITION DES OFFRES PAR PROFESSION
+# 9. RÉPARTITION DES OFFRES PAR PROFESSION
 # ============================================================
 
 @app.get("/statistiques/professions")
-def statistiques_professions():
+def statistiques_professions(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT
+                p.code_cnp,
+                p.nom_profession,
+                COUNT(*) AS nombre_offres,
+                COALESCE(SUM(o.nombre_postes), 0) AS postes_vacants
+            FROM offres_emploi o
+            JOIN professions p ON o.code_cnp = p.code_cnp
+            JOIN regions r ON o.id_region = r.id_region
+            {condition}
+            GROUP BY p.code_cnp, p.nom_profession
+            ORDER BY nombre_offres DESC;
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        p.code_cnp,
-                        p.nom_profession,
-                        COUNT(*) AS nombre_offres,
-                        SUM(o.nombre_postes) AS postes_vacants
-                    FROM offres_emploi o
-                    JOIN professions p
-                        ON o.code_cnp = p.code_cnp
-                    GROUP BY
-                        p.code_cnp,
-                        p.nom_profession
-                    ORDER BY nombre_offres DESC;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultats = curseur.fetchall()
 
         return [
@@ -213,34 +246,36 @@ def statistiques_professions():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "les statistiques par profession."
-            )
+            detail="Impossible de récupérer les statistiques par profession."
         ) from erreur
 
 
 # ============================================================
-# 9. RÉPARTITION DES OFFRES PAR PROVINCE
+# 10. RÉPARTITION DES OFFRES PAR PROVINCE
 # ============================================================
 
 @app.get("/statistiques/provinces")
-def statistiques_provinces():
+def statistiques_provinces(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT
+                r.province,
+                COUNT(*) AS nombre_offres,
+                COALESCE(SUM(o.nombre_postes), 0) AS postes_vacants
+            FROM offres_emploi o
+            JOIN regions r ON o.id_region = r.id_region
+            {condition}
+            GROUP BY r.province
+            ORDER BY nombre_offres DESC;
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        r.province,
-                        COUNT(*) AS nombre_offres,
-                        SUM(o.nombre_postes) AS postes_vacants
-                    FROM offres_emploi o
-                    JOIN regions r
-                        ON o.id_region = r.id_region
-                    GROUP BY r.province
-                    ORDER BY nombre_offres DESC;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultats = curseur.fetchall()
 
         return [
@@ -255,34 +290,38 @@ def statistiques_provinces():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "les statistiques par province."
-            )
+            detail="Impossible de récupérer les statistiques par province."
         ) from erreur
 
 
 # ============================================================
-# 10. QUALITÉ DES DONNÉES SALARIALES
+# 11. QUALITÉ DES DONNÉES SALARIALES
 # ============================================================
 
 @app.get("/statistiques/qualite-salaires")
-def statistiques_qualite_salaires():
+def statistiques_qualite_salaires(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        requete = f"""
+            SELECT
+                o.statut_salaire,
+                COUNT(*) AS nombre_offres,
+                ROUND(
+                    AVG(o.salaire_horaire_estime), 2
+                ) AS salaire_horaire_moyen
+            FROM offres_emploi o
+            JOIN regions r ON o.id_region = r.id_region
+            {condition}
+            GROUP BY o.statut_salaire
+            ORDER BY nombre_offres DESC;
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        statut_salaire,
-                        COUNT(*) AS nombre_offres,
-                        ROUND(
-                            AVG(salaire_horaire_estime), 2
-                        ) AS salaire_horaire_moyen
-                    FROM offres_emploi
-                    GROUP BY statut_salaire
-                    ORDER BY nombre_offres DESC;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultats = curseur.fetchall()
 
         return [
@@ -301,42 +340,50 @@ def statistiques_qualite_salaires():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "la qualité des données salariales."
-            )
+            detail="Impossible de récupérer la qualité des données salariales."
         ) from erreur
 
 
 # ============================================================
-# 11. SALAIRES HORAIRES ESTIMÉS PAR PROFESSION
+# 12. SALAIRES HORAIRES ESTIMÉS PAR PROFESSION
 # ============================================================
 
 @app.get("/statistiques/salaires-professions")
-def statistiques_salaires_professions():
+def statistiques_salaires_professions(
+    province: str | None = Query(default=None)
+):
     try:
+        condition, parametres = filtre_province(province)
+
+        condition_salaire = """
+            o.statut_salaire = 'horaire_exploitable'
+            AND o.salaire_horaire_estime IS NOT NULL
+        """
+
+        if condition:
+            condition += f" AND {condition_salaire}"
+        else:
+            condition = f"WHERE {condition_salaire}"
+
+        requete = f"""
+            SELECT
+                p.code_cnp,
+                p.nom_profession,
+                COUNT(*) AS offres_avec_salaire,
+                ROUND(
+                    AVG(o.salaire_horaire_estime), 2
+                ) AS salaire_horaire_moyen
+            FROM offres_emploi o
+            JOIN professions p ON o.code_cnp = p.code_cnp
+            JOIN regions r ON o.id_region = r.id_region
+            {condition}
+            GROUP BY p.code_cnp, p.nom_profession
+            ORDER BY salaire_horaire_moyen DESC;
+        """
+
         with get_connection() as connexion:
             with connexion.cursor() as curseur:
-                curseur.execute("""
-                    SELECT
-                        p.code_cnp,
-                        p.nom_profession,
-                        COUNT(*) AS offres_avec_salaire,
-                        ROUND(
-                            AVG(o.salaire_horaire_estime), 2
-                        ) AS salaire_horaire_moyen
-                    FROM offres_emploi o
-                    JOIN professions p
-                        ON o.code_cnp = p.code_cnp
-                    WHERE
-                        o.statut_salaire = 'horaire_exploitable'
-                        AND o.salaire_horaire_estime IS NOT NULL
-                    GROUP BY
-                        p.code_cnp,
-                        p.nom_profession
-                    ORDER BY salaire_horaire_moyen DESC;
-                """)
-
+                curseur.execute(requete, parametres)
                 resultats = curseur.fetchall()
 
         return [
@@ -352,8 +399,5 @@ def statistiques_salaires_professions():
     except (psycopg.Error, KeyError) as erreur:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Impossible de récupérer "
-                "les salaires par profession."
-            )
+            detail="Impossible de récupérer les salaires par profession."
         ) from erreur
