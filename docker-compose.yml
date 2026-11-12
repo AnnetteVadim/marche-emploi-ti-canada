@@ -1,0 +1,22 @@
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: projet_synthese_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: emploi_ti
+      POSTGRES_USER: emploi_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emploi_user -d emploi_ti"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
