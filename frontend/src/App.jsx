@@ -1,4 +1,4 @@
-
+ 
 import { useEffect, useState } from 'react'
 import {
   LineChart,
@@ -17,18 +17,23 @@ import './App.css'
 
 const API_URL = 'http://127.0.0.1:8000'
 
-// Afficher les mois en français
-const afficherMois = (valeur) => {
-  const mois = [
-    'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
-    'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'
-  ]
+const MOIS = [
+  { valeur: '2026-01', nom: 'Janvier 2026', court: 'Jan' },
+  { valeur: '2026-02', nom: 'Février 2026', court: 'Fév' },
+  { valeur: '2026-03', nom: 'Mars 2026', court: 'Mar' },
+  { valeur: '2026-04', nom: 'Avril 2026', court: 'Avr' },
+  { valeur: '2026-05', nom: 'Mai 2026', court: 'Mai' },
+  { valeur: '2026-06', nom: 'Juin 2026', court: 'Juin' },
+  { valeur: '2026-07', nom: 'Juillet 2026', court: 'Juil' },
+  { valeur: '2026-08', nom: 'Août 2026', court: 'Août' },
+  { valeur: '2026-09', nom: 'Septembre 2026', court: 'Sep' }
+]
 
-  const numero = Number(String(valeur).slice(-2))
-  return mois[numero - 1] || valeur
+const afficherMois = (valeur) => {
+  return MOIS.find((mois) => mois.valeur === valeur)?.court
+    || String(valeur)
 }
 
-// Noms courts des professions
 const nomsCourts = {
   '21222': 'Spécialistes TI',
   '21232': 'Développeurs logiciels',
@@ -47,16 +52,36 @@ const nomsCourts = {
   '22222': 'Évaluateurs de systèmes'
 }
 
-// Formater les nombres
 const afficherNombre = (valeur) =>
   Number(valeur).toLocaleString('fr-CA')
 
-// Formater les salaires
 const afficherSalaire = (valeur) =>
   `${Number(valeur).toLocaleString('fr-CA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })} $/h`
+
+const styleSelect = {
+  padding: '12px 16px',
+  borderRadius: 8,
+  border: '1px solid #cbd5e1',
+  backgroundColor: 'white',
+  color: '#17365d',
+  fontSize: 15,
+  minWidth: 250,
+  maxWidth: '100%'
+}
+
+const styleBouton = (couleur) => ({
+  backgroundColor: couleur,
+  color: 'white',
+  border: 'none',
+  padding: '12px 22px',
+  borderRadius: 8,
+  fontSize: 14,
+  cursor: 'pointer',
+  fontWeight: 600
+})
 
 function App() {
   // ==========================================================
@@ -69,30 +94,31 @@ function App() {
   const [donneesProvinces, setDonneesProvinces] = useState([])
   const [donneesSalaires, setDonneesSalaires] = useState([])
 
-  // Liste complète des provinces, chargée une seule fois
   const [listeProvinces, setListeProvinces] = useState([])
 
-  // Province sélectionnée : chaîne vide = tout le Canada
+  // Chaîne vide = aucun filtre sur cette dimension.
   const [provinceSelectionnee, setProvinceSelectionnee] = useState('')
+  const [moisSelectionne, setMoisSelectionne] = useState('')
 
   const [afficherToutes, setAfficherToutes] = useState(false)
   const [afficherTousSalaires, setAfficherTousSalaires] = useState(false)
 
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState('')
-  const [erreurProfessions, setErreurProfessions] = useState('')
   const [erreurProvinces, setErreurProvinces] = useState('')
-  const [erreurSalaires, setErreurSalaires] = useState('')
 
   // ==========================================================
-  // 2. CHARGER LA LISTE DES PROVINCES
+  // 2. CHARGER LA LISTE COMPLÈTE DES PROVINCES
   // ==========================================================
 
   useEffect(() => {
+    const controleur = new AbortController()
+
     async function chargerListeProvinces() {
       try {
         const reponse = await fetch(
-          `${API_URL}/statistiques/provinces`
+          `${API_URL}/statistiques/provinces`,
+          { signal: controleur.signal }
         )
 
         if (!reponse.ok) {
@@ -101,31 +127,40 @@ function App() {
 
         const donnees = await reponse.json()
 
-        setListeProvinces(
-          [...donnees].sort((a, b) =>
-            a.province.localeCompare(b.province, 'fr')
+        if (!controleur.signal.aborted) {
+          setListeProvinces(
+            [...donnees].sort((a, b) =>
+              a.province.localeCompare(b.province, 'fr')
+            )
           )
-        )
+        }
       } catch (error) {
-        console.error(error)
-        setErreurProvinces(error.message)
+        if (error.name !== 'AbortError') {
+          console.error(error)
+          setErreurProvinces(error.message)
+        }
       }
     }
 
     chargerListeProvinces()
+
+    return () => controleur.abort()
   }, [])
 
   // ==========================================================
-  // 3. CHARGER LES DONNÉES SELON LA PROVINCE
+  // 3. CHARGER LES DONNÉES SELON LES DEUX FILTRES
   // ==========================================================
 
   useEffect(() => {
     const controleur = new AbortController()
-
     const parametres = new URLSearchParams()
 
     if (provinceSelectionnee) {
       parametres.set('province', provinceSelectionnee)
+    }
+
+    if (moisSelectionne) {
+      parametres.set('mois', moisSelectionne)
     }
 
     const suffixe = parametres.toString()
@@ -150,12 +185,8 @@ function App() {
     async function chargerTableauDeBord() {
       setChargement(true)
       setErreur('')
-      setErreurProfessions('')
-      setErreurProvinces('')
-      setErreurSalaires('')
 
-      // Vider les anciennes données pour éviter d'afficher
-      // les résultats de la province précédente.
+      // Éviter d'afficher les données de l'ancienne sélection.
       setStatistiques(null)
       setDonneesMensuelles([])
       setDonneesProfessions([])
@@ -213,11 +244,11 @@ function App() {
         )
       } catch (error) {
         if (error.name !== 'AbortError') {
+          console.error(error)
           setErreur(
             'Impossible de charger les données du tableau de bord. ' +
-            'Vérifie que FastAPI fonctionne.'
+            'Vérifie que FastAPI fonctionne et que les filtres sont valides.'
           )
-          console.error(error)
         }
       } finally {
         if (!controleur.signal.aborted) {
@@ -228,13 +259,11 @@ function App() {
 
     chargerTableauDeBord()
 
-    return () => {
-      controleur.abort()
-    }
-  }, [provinceSelectionnee])
+    return () => controleur.abort()
+  }, [provinceSelectionnee, moisSelectionne])
 
   // ==========================================================
-  // 4. PRÉPARATION DES DONNÉES DES GRAPHIQUES
+  // 4. PRÉPARER LES DONNÉES DES GRAPHIQUES
   // ==========================================================
 
   const professionsTriees = [...donneesProfessions].sort(
@@ -251,16 +280,20 @@ function App() {
 
   const nomTerritoire = provinceSelectionnee || 'Canada'
 
-  const styleBouton = (couleur) => ({
-    backgroundColor: couleur,
-    color: 'white',
-    border: 'none',
-    padding: '12px 22px',
-    borderRadius: 8,
-    fontSize: 14,
-    cursor: 'pointer',
-    fontWeight: 600
-  })
+  const nomMois = MOIS.find(
+    (mois) => mois.valeur === moisSelectionne
+  )?.nom
+
+  const periodeAnalysee = nomMois || 'Janvier à septembre 2026'
+
+  const filtresActifs = Boolean(
+    provinceSelectionnee || moisSelectionne
+  )
+
+  const reinitialiserFiltres = () => {
+    setProvinceSelectionnee('')
+    setMoisSelectionne('')
+  }
 
   // ==========================================================
   // 5. INTERFACE DU TABLEAU DE BORD
@@ -275,70 +308,109 @@ function App() {
         de janvier à septembre 2026.
       </p>
 
-      {/* FILTRE INTERACTIF PAR PROVINCE */}
+      {/* FILTRES INTERACTIFS */}
 
       <section
         className="graphique"
         style={{ marginBottom: 24 }}
       >
-        <h2>Explorer les données par province</h2>
+        <h2>Explorer les données</h2>
 
         <p>
-          Sélectionnez une province ou un territoire pour
-          actualiser les indicateurs et les graphiques.
+          Sélectionnez une province ou un territoire et
+          une période pour actualiser les indicateurs
+          et les graphiques.
         </p>
 
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-end',
             gap: 16,
             flexWrap: 'wrap'
           }}
         >
-          <label
-            htmlFor="filtre-province"
-            style={{ fontWeight: 600 }}
-          >
-            Province ou territoire :
-          </label>
-
-          <select
-            id="filtre-province"
-            value={provinceSelectionnee}
-            onChange={(event) =>
-              setProvinceSelectionnee(event.target.value)
-            }
+          <div
             style={{
-              padding: '12px 16px',
-              borderRadius: 8,
-              border: '1px solid #cbd5e1',
-              backgroundColor: 'white',
-              color: '#17365d',
-              fontSize: 15,
-              minWidth: 250,
-              maxWidth: '100%'
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
             }}
           >
-            <option value="">Toutes les provinces (Canada)</option>
+            <label
+              htmlFor="filtre-province"
+              style={{ fontWeight: 600 }}
+            >
+              Province ou territoire :
+            </label>
 
-            {listeProvinces.map((province) => (
-              <option
-                key={province.province}
-                value={province.province}
-              >
-                {province.province}
+            <select
+              id="filtre-province"
+              value={provinceSelectionnee}
+              onChange={(event) =>
+                setProvinceSelectionnee(event.target.value)
+              }
+              style={styleSelect}
+            >
+              <option value="">
+                Toutes les provinces (Canada)
               </option>
-            ))}
-          </select>
 
-          {provinceSelectionnee && (
+              {listeProvinces.map((province) => (
+                <option
+                  key={province.province}
+                  value={province.province}
+                >
+                  {province.province}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}
+          >
+            <label
+              htmlFor="filtre-mois"
+              style={{ fontWeight: 600 }}
+            >
+              Mois :
+            </label>
+
+            <select
+              id="filtre-mois"
+              value={moisSelectionne}
+              onChange={(event) =>
+                setMoisSelectionne(event.target.value)
+              }
+              style={styleSelect}
+            >
+              <option value="">
+                Tous les mois (janv. à sept. 2026)
+              </option>
+
+              {MOIS.map((mois) => (
+                <option
+                  key={mois.valeur}
+                  value={mois.valeur}
+                >
+                  {mois.nom}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {filtresActifs && (
             <button
               type="button"
-              onClick={() => setProvinceSelectionnee('')}
+              onClick={reinitialiserFiltres}
               style={styleBouton('#475569')}
             >
-              Réinitialiser le filtre
+              Réinitialiser les filtres
             </button>
           )}
         </div>
@@ -351,6 +423,8 @@ function App() {
           }}
         >
           Zone analysée : <strong>{nomTerritoire}</strong>
+          {' | '}
+          Période : <strong>{periodeAnalysee}</strong>
         </p>
       </section>
 
@@ -358,7 +432,8 @@ function App() {
 
       {chargement && (
         <p role="status">
-          Chargement des données pour {nomTerritoire}...
+          Chargement des données pour {nomTerritoire}
+          {' — '}{periodeAnalysee}...
         </p>
       )}
 
@@ -382,7 +457,7 @@ function App() {
 
           <div className="carte">
             <h2>Professions TI</h2>
-            <p>{statistiques.nombre_professions}</p>
+            <p>{afficherNombre(statistiques.nombre_professions)}</p>
           </div>
         </section>
       )}
@@ -390,13 +465,12 @@ function App() {
       {/* GRAPHIQUE 1 : ÉVOLUTION MENSUELLE */}
 
       <section className="graphique">
-        <h2>
-          Évolution mensuelle des offres d'emploi TI
-        </h2>
+        <h2>Évolution mensuelle des offres d'emploi TI</h2>
 
         <p>
-          Évolution des offres publiées dans la zone
-          sélectionnée, de janvier à septembre 2026.
+          {moisSelectionne
+            ? `Nombre d'offres publiées en ${nomMois.toLowerCase()} dans la zone sélectionnée : ${nomTerritoire}.`
+            : `Évolution des offres publiées dans la zone sélectionnée (${nomTerritoire}), de janvier à septembre 2026.`}
         </p>
 
         {!chargement && donneesMensuelles.length > 0 ? (
@@ -426,7 +500,8 @@ function App() {
                   name="Offres d'emploi"
                   stroke="#2563eb"
                   strokeWidth={3}
-                  dot={{ r: 4 }}
+                  dot={{ r: 5 }}
+                  activeDot={{ r: 7 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -451,13 +526,10 @@ function App() {
 
         <p>
           Comparaison des professions selon le nombre
-          d'offres publiées entre janvier et septembre 2026.
-          Zone analysée : {nomTerritoire}.
+          d'offres publiées.
+          {' '}Zone analysée : {nomTerritoire}.
+          {' '}Période : {periodeAnalysee}.
         </p>
-
-        {erreurProfessions && (
-          <p style={{ color: 'red' }}>{erreurProfessions}</p>
-        )}
 
         {!chargement && donneesProfessions.length > 0 ? (
           <>
@@ -540,7 +612,7 @@ function App() {
             </div>
           </>
         ) : (
-          !erreur && !erreurProfessions && (
+          !erreur && (
             <p>
               {chargement
                 ? 'Chargement des professions...'
@@ -560,7 +632,8 @@ function App() {
         <p>
           {provinceSelectionnee
             ? `Offres d'emploi TI dans la zone sélectionnée : ${provinceSelectionnee}.`
-            : "Comparaison géographique des offres d'emploi TI au Canada, de janvier à septembre 2026."}
+            : "Comparaison géographique des offres d'emploi TI au Canada."}
+          {' '}Période : {periodeAnalysee}.
         </p>
 
         {erreurProvinces && (
@@ -648,12 +721,9 @@ function App() {
           Moyenne des milieux de fourchettes salariales horaires
           annoncées dans les offres exploitables.
           Les montants sont exprimés en dollars canadiens par heure.
-          Zone analysée : {nomTerritoire}.
+          {' '}Zone analysée : {nomTerritoire}.
+          {' '}Période : {periodeAnalysee}.
         </p>
-
-        {erreurSalaires && (
-          <p style={{ color: 'red' }}>{erreurSalaires}</p>
-        )}
 
         {!chargement && donneesSalaires.length > 0 ? (
           <>
@@ -754,7 +824,7 @@ function App() {
             </p>
           </>
         ) : (
-          !erreur && !erreurSalaires && (
+          !erreur && (
             <p>
               {chargement
                 ? 'Chargement des données salariales...'

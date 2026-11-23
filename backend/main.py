@@ -13,7 +13,7 @@ from backend.database import get_connection
 app = FastAPI(
     title="Analyse du marché de l'emploi TI au Canada",
     description="API REST pour analyser les offres d'emploi TI au Canada.",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 
@@ -34,20 +34,34 @@ app.add_middleware(
 
 
 # ============================================================
-# 3. FONCTION COMMUNE POUR FILTRER PAR PROVINCE
+# 3. FONCTION COMMUNE POUR FILTRER PAR PROVINCE ET PAR MOIS
 # ============================================================
 
-def filtre_province(province):
+def construire_filtres(province=None, mois=None):
     """
-    Retourne une condition SQL et ses paramètres.
+    Construit les conditions SQL et leurs paramètres.
 
-    Si aucune province n'est sélectionnée, toutes les
-    offres sont conservées.
+    Les filtres sont facultatifs et peuvent être combinés :
+    - Aucun filtre : toutes les offres
+    - Province uniquement
+    - Mois uniquement
+    - Province et mois
     """
-    if province is None or not province.strip():
-        return "", []
+    conditions = []
+    parametres = []
 
-    return "WHERE r.province = %s", [province.strip()]
+    if province is not None and province.strip():
+        conditions.append("r.province = %s")
+        parametres.append(province.strip())
+
+    if mois is not None:
+        conditions.append("o.mois_source = %s")
+        parametres.append(mois)
+
+    if conditions:
+        return "WHERE " + " AND ".join(conditions), parametres
+
+    return "", []
 
 
 # ============================================================
@@ -70,10 +84,14 @@ def accueil():
 
 @app.get("/statistiques/total-offres")
 def total_offres(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT COUNT(*)
@@ -102,10 +120,14 @@ def total_offres(
 
 @app.get("/statistiques/generales")
 def statistiques_generales(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT
@@ -141,10 +163,14 @@ def statistiques_generales(
 
 @app.get("/statistiques/mensuelles")
 def statistiques_mensuelles(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT
@@ -209,10 +235,14 @@ def tester_database():
 
 @app.get("/statistiques/professions")
 def statistiques_professions(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT
@@ -256,10 +286,14 @@ def statistiques_professions(
 
 @app.get("/statistiques/provinces")
 def statistiques_provinces(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT
@@ -300,10 +334,14 @@ def statistiques_provinces(
 
 @app.get("/statistiques/qualite-salaires")
 def statistiques_qualite_salaires(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         requete = f"""
             SELECT
@@ -350,10 +388,14 @@ def statistiques_qualite_salaires(
 
 @app.get("/statistiques/salaires-professions")
 def statistiques_salaires_professions(
-    province: str | None = Query(default=None)
+    province: str | None = Query(default=None),
+    mois: str | None = Query(
+        default=None,
+        pattern=r"^2026-(0[1-9])$"
+    )
 ):
     try:
-        condition, parametres = filtre_province(province)
+        condition, parametres = construire_filtres(province, mois)
 
         condition_salaire = """
             o.statut_salaire = 'horaire_exploitable'
