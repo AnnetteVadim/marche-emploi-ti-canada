@@ -1,7 +1,11 @@
-
 import os
+from pathlib import Path
 
 import psycopg
+from dotenv import load_dotenv
+
+# Charger le fichier .env situé à la racine du projet.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def get_connection():
