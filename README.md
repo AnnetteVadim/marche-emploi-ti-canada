@@ -71,6 +71,8 @@ Projet synthèse/
 │   ├── exploration.py
 │   ├── indicateurs.py
 │   └── verification_avril.py           Vérification du fichier d'avril (publié en anglais)
+├── tests/
+│   └── test_api.py           Tests de l'API (pytest)
 ├── data/                     Non versionné
 │   ├── raw/
 │   └── processed/
@@ -141,6 +143,17 @@ npm run dev
 
 Le tableau de bord est accessible sur http://localhost:5173.
 
+## Tests
+
+Les tests vérifient que l'API répond, que les indicateurs correspondent aux données traitées (11 380 offres, 12 214 postes, 15 professions, 13 provinces et territoires, totaux par mois), que les filtres par province et par mois sont cohérents entre eux et que les paramètres invalides sont refusés.
+
+Docker doit être démarré et les données importées. À partir de la racine du projet :
+
+```bash
+source backend/.venv/bin/activate
+python -m pytest -v
+```
+
 ## Routes de l'API
 
 Toutes les routes `/statistiques/...` acceptent deux filtres facultatifs : `province` (ex. `Québec`) et `mois` (ex. `2026-03`).
@@ -161,4 +174,4 @@ Exemple : http://127.0.0.1:8000/statistiques/professions?province=Québec&mois=2
 
 ## Technologies
 
-Python, pandas, PostgreSQL 17, Docker, FastAPI, React, Vite, Recharts.
+Python, pandas, PostgreSQL 17, Docker, FastAPI, pytest, React, Vite, Recharts.

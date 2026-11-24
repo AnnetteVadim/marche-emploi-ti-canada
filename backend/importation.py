@@ -1,9 +1,9 @@
-
 from pathlib import Path
 import os
 
 import pandas as pd
 import psycopg
+from dotenv import load_dotenv
 
 # =====================================================
 # 1. CHEMINS ET CONFIGURATION
@@ -11,18 +11,21 @@ import psycopg
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Charger le mot de passe depuis le fichier .env (non versionné).
+load_dotenv(BASE_DIR / ".env")
+
 FICHIER_CSV = (
     BASE_DIR / "data" / "processed"
     / "job_bank_ti_harmonise.csv"
 )
 
-# Identifiants locaux de développement
+# Identifiants de connexion (le mot de passe vient du fichier .env)
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "5433")),
     "dbname": os.getenv("DB_NAME", "emploi_ti"),
     "user": os.getenv("DB_USER", "emploi_user"),
-    "password": os.getenv("DB_PASSWORD", "emploi_dev_local"),
+    "password": os.environ["DB_PASSWORD"],
 }
 
 # =====================================================
