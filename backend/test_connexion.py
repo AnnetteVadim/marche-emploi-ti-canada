@@ -1,14 +1,12 @@
-
 import psycopg
 
+from backend.database import get_connection
+
+# Lancement, à partir de la racine du projet :
+#     python -m backend.test_connexion
+
 try:
-    with psycopg.connect(
-        host="localhost",
-        port=5433,
-        dbname="emploi_ti",
-        user="emploi_user",
-        password="emploi_dev_local"
-    ) as connexion:
+    with get_connection() as connexion:
 
         with connexion.cursor() as curseur:
             curseur.execute(
