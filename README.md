@@ -3,6 +3,7 @@
 Plateforme d'analyse des offres d'emploi en technologies de l'information (TI) publiées au Canada de janvier à septembre 2026.
 
 Projet de synthèse réalisé par **Anta Mbaye SENE**, Université du Québec en Outaouais, session d'automne 2026.
+![alt text](apercu.png)
 
 ## Pourquoi ce projet
 
