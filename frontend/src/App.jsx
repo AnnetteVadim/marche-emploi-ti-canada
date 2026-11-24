@@ -1,4 +1,3 @@
- 
 import { useEffect, useState } from 'react'
 import {
   LineChart,
@@ -9,6 +8,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   LabelList
 } from 'recharts'
@@ -16,6 +16,18 @@ import {
 import './App.css'
 
 const API_URL = 'http://127.0.0.1:8000'
+
+// Palette volontairement sobre : une seule couleur pour les données,
+// du gris pour le reste.
+const COULEURS = {
+  donnees: '#3d6a94',
+  texte: '#333333',
+  texteSecondaire: '#666666',
+  grille: '#e5e5e5',
+  bordure: '#cccccc',
+  donneesSecondaires: '#a9bdd1',
+  survol: '#f2f2f2'
+}
 
 const MOIS = [
   { valeur: '2026-01', nom: 'Janvier 2026', court: 'Jan' },
@@ -63,25 +75,37 @@ const afficherSalaire = (valeur) =>
 
 const styleSelect = {
   padding: '12px 16px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
+  borderRadius: 4,
+  border: `1px solid ${COULEURS.bordure}`,
   backgroundColor: 'white',
-  color: '#17365d',
+  color: COULEURS.texte,
   fontSize: 15,
   minWidth: 250,
   maxWidth: '100%'
 }
 
-const styleBouton = (couleur) => ({
-  backgroundColor: couleur,
-  color: 'white',
-  border: 'none',
-  padding: '12px 22px',
-  borderRadius: 8,
+const styleBouton = {
+  backgroundColor: 'white',
+  color: COULEURS.texte,
+  border: `1px solid ${COULEURS.bordure}`,
+  padding: '10px 18px',
+  borderRadius: 4,
   fontSize: 14,
-  cursor: 'pointer',
-  fontWeight: 600
-})
+  cursor: 'pointer'
+}
+
+// Largeur de la fenêtre, pour adapter les graphiques sur téléphone.
+function useLargeurEcran() {
+  const [largeur, setLargeur] = useState(window.innerWidth)
+
+  useEffect(() => {
+    const surRedimensionnement = () => setLargeur(window.innerWidth)
+    window.addEventListener('resize', surRedimensionnement)
+    return () => window.removeEventListener('resize', surRedimensionnement)
+  }, [])
+
+  return largeur
+}
 
 function App() {
   // ==========================================================
@@ -93,6 +117,7 @@ function App() {
   const [donneesProfessions, setDonneesProfessions] = useState([])
   const [donneesProvinces, setDonneesProvinces] = useState([])
   const [donneesSalaires, setDonneesSalaires] = useState([])
+  const [qualiteSalaires, setQualiteSalaires] = useState([])
 
   const [listeProvinces, setListeProvinces] = useState([])
 
@@ -106,6 +131,10 @@ function App() {
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState('')
   const [erreurProvinces, setErreurProvinces] = useState('')
+
+  const estMobile = useLargeurEcran() < 640
+  const largeurEtiquettes = estMobile ? 120 : 185
+  const tailleEtiquettes = estMobile ? 10 : 12
 
   // ==========================================================
   // 2. CHARGER LA LISTE COMPLÈTE DES PROVINCES
@@ -192,6 +221,7 @@ function App() {
       setDonneesProfessions([])
       setDonneesProvinces([])
       setDonneesSalaires([])
+      setQualiteSalaires([])
 
       try {
         const [
@@ -199,19 +229,22 @@ function App() {
           mensuelles,
           professions,
           provinces,
-          salaires
+          salaires,
+          qualite
         ] = await Promise.all([
           recupererDonnees('generales'),
           recupererDonnees('mensuelles'),
           recupererDonnees('professions'),
           recupererDonnees('provinces'),
-          recupererDonnees('salaires-professions')
+          recupererDonnees('salaires-professions'),
+          recupererDonnees('qualite-salaires')
         ])
 
         if (controleur.signal.aborted) return
 
         setStatistiques(generales)
         setDonneesMensuelles(mensuelles)
+        setQualiteSalaires(qualite)
 
         setDonneesProfessions(
           professions.map((profession) => ({
@@ -278,6 +311,22 @@ function App() {
     ? donneesSalaires
     : donneesSalaires.slice(0, 10)
 
+  const totalOffresSalaires = qualiteSalaires.reduce(
+    (total, ligne) => total + ligne.nombre_offres,
+    0
+  )
+
+  const offresSalaireExploitable =
+    qualiteSalaires.find(
+      (ligne) => ligne.statut_salaire === 'horaire_exploitable'
+    )?.nombre_offres || 0
+
+  const tauxSalairesExploitables = totalOffresSalaires
+    ? Math.round(
+        (offresSalaireExploitable / totalOffresSalaires) * 100
+      )
+    : null
+
   const nomTerritoire = provinceSelectionnee || 'Canada'
 
   const nomMois = MOIS.find(
@@ -305,7 +354,9 @@ function App() {
 
       <p>
         Tableau de bord d'analyse des offres d'emploi
-        de janvier à septembre 2026.
+        de janvier à septembre 2026, pensé pour aider les
+        finissants en informatique à mieux comprendre le
+        marché avant de chercher un premier emploi.
       </p>
 
       {/* FILTRES INTERACTIFS */}
@@ -408,7 +459,7 @@ function App() {
             <button
               type="button"
               onClick={reinitialiserFiltres}
-              style={styleBouton('#475569')}
+              style={styleBouton}
             >
               Réinitialiser les filtres
             </button>
@@ -419,7 +470,7 @@ function App() {
           style={{
             marginTop: 16,
             fontSize: 14,
-            color: '#64748b'
+            color: COULEURS.texteSecondaire
           }}
         >
           Zone analysée : <strong>{nomTerritoire}</strong>
@@ -438,7 +489,7 @@ function App() {
       )}
 
       {erreur && (
-        <p role="alert" style={{ color: 'red' }}>
+        <p role="alert" style={{ color: '#b00020' }}>
           {erreur}
         </p>
       )}
@@ -446,17 +497,17 @@ function App() {
       {!chargement && statistiques && (
         <section className="statistiques">
           <div className="carte">
-            <h2>Offres d'emploi</h2>
+            <h3>Offres d'emploi</h3>
             <p>{afficherNombre(statistiques.nombre_offres)}</p>
           </div>
 
           <div className="carte">
-            <h2>Postes vacants</h2>
+            <h3>Postes vacants</h3>
             <p>{afficherNombre(statistiques.postes_vacants)}</p>
           </div>
 
           <div className="carte">
-            <h2>Professions TI</h2>
+            <h3>Professions TI</h3>
             <p>{afficherNombre(statistiques.nombre_professions)}</p>
           </div>
         </section>
@@ -471,13 +522,18 @@ function App() {
           {moisSelectionne
             ? `Nombre d'offres publiées en ${nomMois.toLowerCase()} dans la zone sélectionnée : ${nomTerritoire}.`
             : `Évolution des offres publiées dans la zone sélectionnée (${nomTerritoire}), de janvier à septembre 2026.`}
+          {' '}Une offre peut annoncer plusieurs postes : c'est
+          pourquoi le nombre de postes vacants est plus élevé.
         </p>
 
         {!chargement && donneesMensuelles.length > 0 ? (
           <div style={{ width: '100%', height: 350 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={donneesMensuelles}>
-                <CartesianGrid strokeDasharray="3 3" />
+              <LineChart
+                data={donneesMensuelles}
+                margin={{ top: 10, right: 30, left: 0, bottom: 10 }}
+              >
+                <CartesianGrid stroke={COULEURS.grille} />
 
                 <XAxis
                   dataKey="mois"
@@ -488,20 +544,32 @@ function App() {
 
                 <Tooltip
                   labelFormatter={afficherMois}
-                  formatter={(valeur) => [
+                  formatter={(valeur, nom) => [
                     afficherNombre(valeur),
-                    "Nombre d'offres"
+                    nom
                   ]}
                 />
 
+                <Legend />
+
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="nombre_offres"
                   name="Offres d'emploi"
-                  stroke="#2563eb"
-                  strokeWidth={3}
-                  dot={{ r: 5 }}
-                  activeDot={{ r: 7 }}
+                  stroke={COULEURS.donnees}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+
+                <Line
+                  type="linear"
+                  dataKey="postes_vacants"
+                  name="Postes vacants"
+                  stroke={COULEURS.donneesSecondaires}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -550,19 +618,20 @@ function App() {
                     bottom: 10
                   }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid stroke={COULEURS.grille} />
 
                   <XAxis type="number" />
 
                   <YAxis
                     type="category"
                     dataKey="nom_court"
-                    width={185}
-                    tick={{ fontSize: 12 }}
+                    width={largeurEtiquettes}
+                    tick={{ fontSize: tailleEtiquettes }}
                     interval={0}
                   />
 
                   <Tooltip
+                    cursor={{ fill: COULEURS.survol }}
                     formatter={(valeur) => [
                       afficherNombre(valeur),
                       "Nombre d'offres"
@@ -575,8 +644,7 @@ function App() {
                   <Bar
                     dataKey="nombre_offres"
                     name="Nombre d'offres"
-                    fill="#2563eb"
-                    radius={[0, 5, 5, 0]}
+                    fill={COULEURS.donnees}
                   >
                     <LabelList
                       dataKey="nombre_offres"
@@ -584,7 +652,7 @@ function App() {
                       formatter={afficherNombre}
                       style={{
                         fontSize: 11,
-                        fill: '#17365d'
+                        fill: COULEURS.texte
                       }}
                     />
                   </Bar>
@@ -603,7 +671,7 @@ function App() {
                 onClick={() =>
                   setAfficherToutes(!afficherToutes)
                 }
-                style={styleBouton('#2563eb')}
+                style={styleBouton}
               >
                 {afficherToutes
                   ? 'Afficher le Top 10'
@@ -637,7 +705,7 @@ function App() {
         </p>
 
         {erreurProvinces && (
-          <p style={{ color: 'red' }}>{erreurProvinces}</p>
+          <p style={{ color: '#b00020' }}>{erreurProvinces}</p>
         )}
 
         {!chargement && donneesProvinces.length > 0 ? (
@@ -661,19 +729,20 @@ function App() {
                   bottom: 10
                 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid stroke={COULEURS.grille} />
 
                 <XAxis type="number" />
 
                 <YAxis
                   type="category"
                   dataKey="province"
-                  width={175}
-                  tick={{ fontSize: 12 }}
+                  width={largeurEtiquettes}
+                  tick={{ fontSize: tailleEtiquettes }}
                   interval={0}
                 />
 
                 <Tooltip
+                  cursor={{ fill: COULEURS.survol }}
                   formatter={(valeur) => [
                     afficherNombre(valeur),
                     "Nombre d'offres"
@@ -683,8 +752,7 @@ function App() {
                 <Bar
                   dataKey="nombre_offres"
                   name="Nombre d'offres"
-                  fill="#0d9488"
-                  radius={[0, 5, 5, 0]}
+                  fill={COULEURS.donnees}
                 >
                   <LabelList
                     dataKey="nombre_offres"
@@ -692,7 +760,7 @@ function App() {
                     formatter={afficherNombre}
                     style={{
                       fontSize: 11,
-                      fill: '#17365d'
+                      fill: COULEURS.texte
                     }}
                   />
                 </Bar>
@@ -725,6 +793,24 @@ function App() {
           {' '}Période : {periodeAnalysee}.
         </p>
 
+        {!chargement && tauxSalairesExploitables !== null && (
+          <p
+            style={{
+              fontSize: 14,
+              color: COULEURS.texteSecondaire
+            }}
+          >
+            Salaire horaire exploitable pour{' '}
+            <strong>
+              {afficherNombre(offresSalaireExploitable)} offres
+              sur {afficherNombre(totalOffresSalaires)}
+            </strong>
+            {' '}({tauxSalairesExploitables} %). Les autres offres
+            annoncent un salaire annuel, hebdomadaire ou aucun
+            montant comparable.
+          </p>
+        )}
+
         {!chargement && donneesSalaires.length > 0 ? (
           <>
             <div
@@ -744,7 +830,7 @@ function App() {
                     bottom: 10
                   }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid stroke={COULEURS.grille} />
 
                   <XAxis
                     type="number"
@@ -755,12 +841,13 @@ function App() {
                   <YAxis
                     type="category"
                     dataKey="nom_court"
-                    width={185}
-                    tick={{ fontSize: 12 }}
+                    width={largeurEtiquettes}
+                    tick={{ fontSize: tailleEtiquettes }}
                     interval={0}
                   />
 
                   <Tooltip
+                    cursor={{ fill: COULEURS.survol }}
                     formatter={(valeur) => [
                       afficherSalaire(valeur),
                       'Salaire horaire moyen estimé'
@@ -773,8 +860,7 @@ function App() {
                   <Bar
                     dataKey="salaire_horaire_moyen"
                     name="Salaire horaire moyen estimé"
-                    fill="#7c3aed"
-                    radius={[0, 5, 5, 0]}
+                    fill={COULEURS.donnees}
                   >
                     <LabelList
                       dataKey="salaire_horaire_moyen"
@@ -782,7 +868,7 @@ function App() {
                       formatter={afficherSalaire}
                       style={{
                         fontSize: 11,
-                        fill: '#17365d'
+                        fill: COULEURS.texte
                       }}
                     />
                   </Bar>
@@ -801,7 +887,7 @@ function App() {
                 onClick={() =>
                   setAfficherTousSalaires(!afficherTousSalaires)
                 }
-                style={styleBouton('#7c3aed')}
+                style={styleBouton}
               >
                 {afficherTousSalaires
                   ? 'Afficher le Top 10'
@@ -812,7 +898,7 @@ function App() {
             <p
               style={{
                 fontSize: 13,
-                color: '#64748b',
+                color: COULEURS.texteSecondaire,
                 marginTop: 20
               }}
             >
@@ -833,6 +919,83 @@ function App() {
           )
         )}
       </section>
+
+      {/* À PROPOS DU PROJET */}
+
+      <section className="graphique a-propos">
+        <h2>À propos du projet</h2>
+
+        <h3>Pourquoi ce tableau de bord ?</h3>
+
+        <p>
+          Je suis finissante en informatique et je m'intéresse
+          surtout aux données. Comme beaucoup d'étudiants en fin
+          de parcours, je sais que le marché du travail peut
+          sembler hostile et que l'idée de chercher un emploi
+          est stressante. Ce site permet aux finissants qui
+          n'ont pas encore eu de stage ou d'emploi de voir plus
+          clairement les tendances et les offres en TI au Canada :
+          quelles professions recrutent, dans quelles provinces
+          et à quels salaires s'attendre.
+        </p>
+
+        <h3>D'où viennent les données ?</h3>
+
+        <p>
+          Les données proviennent des fichiers ouverts d'offres
+          d'emploi de Guichet-Emplois, publiés sur le Portail du
+          gouvernement ouvert du Canada. Neuf fichiers mensuels,
+          de janvier à septembre 2026, ont été regroupés et
+          nettoyés. Seules les offres associées à 15 codes de la
+          Classification nationale des professions (CNP 2021)
+          liés aux technologies de l'information ont été
+          conservées.
+        </p>
+
+        <h3>Limites à garder en tête</h3>
+
+        <ul>
+          <li>
+            Les données couvrent uniquement les offres publiées
+            sur Guichet-Emplois, et non l'ensemble du marché
+            canadien.
+          </li>
+          <li>
+            Une offre peut annoncer plusieurs postes vacants :
+            le nombre d'offres et le nombre de postes sont donc
+            présentés séparément.
+          </li>
+          <li>
+            Les salaires sont calculés seulement à partir des
+            offres qui annoncent un salaire horaire exploitable.
+            Il s'agit de salaires proposés, et non de salaires
+            réellement versés.
+          </li>
+          <li>
+            La sélection de 15 professions correspond au
+            périmètre choisi pour ce projet et ne couvre pas
+            toutes les professions liées aux TI.
+          </li>
+        </ul>
+      </section>
+
+      <footer className="pied-de-page">
+        <p>
+          Anta Mbaye SENE — Projet de synthèse, Université du
+          Québec en Outaouais, automne 2026.
+        </p>
+        <p>
+          Source des données :{' '}
+          <a
+            href="https://www.guichetemplois.gc.ca"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Guichet-Emplois
+          </a>
+          {' '}(données ouvertes, janvier à septembre 2026).
+        </p>
+      </footer>
     </main>
   )
 }
