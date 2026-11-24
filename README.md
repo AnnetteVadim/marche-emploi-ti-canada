@@ -3,7 +3,6 @@
 Plateforme d'analyse des offres d'emploi en technologies de l'information (TI) publiées au Canada de janvier à septembre 2026.
 
 Projet de synthèse réalisé par **Anta Mbaye SENE**, Université du Québec en Outaouais, session d'automne 2026.
-![Aperçu du tableau de bord](docs/apercu.png)
 
 ## Pourquoi ce projet
 
@@ -25,7 +24,21 @@ Je suis finissante en informatique et je m'intéresse surtout aux données. En f
 - **Périmètre :** 15 codes de la Classification nationale des professions (CNP 2021) liés aux TI
 - **Volume après traitement :** 11 380 offres et 12 214 postes vacants
 
-Les fichiers CSV ne sont pas inclus dans le dépôt à cause de leur taille (environ 470 Mo). Ils doivent être placés dans `data/raw/` avant de lancer le traitement.
+Les fichiers CSV ne sont pas inclus dans le dépôt à cause de leur taille (environ 470 Mo). Ils se téléchargent sur le [Portail du gouvernement ouvert](https://open.canada.ca/data/fr/dataset/ea639e28-c0fc-48bf-b5dd-b8899bd43072) et doivent être placés dans `data/raw/` sous les noms suivants, attendus par `notebooks/traitement_mensuel.py` :
+
+```
+job-bank-open-data-all-job-postings-fr-jan2026.csv
+job-bank-open-data-all-job-postings-fr-fev2026.csv
+job-bank-open-data-all-job-postings-fr-mars2026.csv
+job-bank-open-data-all-job-postings-en-apr2026.csv
+job-bank-open-data-all-job-postings-fr-mai2026.csv
+job-bank-open-data-all-job-postings-fr-juin2026.csv
+job-bank-open-data-all-job-postings-fr-juillet2026.csv
+job-bank-open-data-all-job-postings-fr-aout2026.csv
+job-bank-open-data-all-job-postings-fr-sept2026.csv
+```
+
+Le fichier d'avril n'était disponible qu'en anglais ; ses colonnes sont harmonisées automatiquement par le script.
 
 ### Limites
 
@@ -114,8 +127,8 @@ python3 -m venv backend/.venv
 source backend/.venv/bin/activate
 pip install -r backend/requirements.txt pandas numpy
 
-python notebooks/traitement_mensuel.py
-python notebooks/harmonisation_professions.py
+python notebooks/traitement_mensuel.py          # produit data/processed/job_bank_ti_jan_sept2026.csv
+python notebooks/harmonisation_professions.py   # produit data/processed/job_bank_ti_harmonise.csv
 
 docker exec -i projet_synthese_postgres psql -U emploi_user -d emploi_ti < backend/schema.sql
 python backend/importation.py
